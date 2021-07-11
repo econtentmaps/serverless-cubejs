@@ -12,14 +12,44 @@ module.exports = new HandlerClass({
     const jwk = _.find(jwks.keys, (x) => x.kid === decoded.header.kid);
     const pem = jwkToPem(jwk);
     req.securityContext = jwt.verify(auth, pem);
-    // contextToAppId: ({ securityContext }) => `APP_${securityContext.userId}`;
-    // preAggregationsSchema: ({ securityContext }) =>
-    //   `pre_aggregations_${securityContext.userId}`;
     console.log("req.securityContext: ", req.securityContext);
   },
-  // See
-  // * https://github.com/cube-js/cube.js/blob/master/packages/cubejs-server-core/core/index.js#L190
-  // * https://github.com/cube-js/cube.js/blob/d29a483606af5fc4abfd87213b6f148db990212c/examples/web-analytics/index.js#L18
+
+  scheduledRefreshContexts: async () => [
+    {
+      securityContext: {
+        ["custom:orgId"]: "none",
+      },
+    },
+  ],
+
+  queryTransformer: (query, { securityContext }) => {
+    const user = securityContext;
+    if (user["custom:orgId"] && user["custom:orgId"] !== "none") {
+      console.log("query: ", JSON.stringify(query));
+      const cubes = query.measures.map((measure) => {
+        return measure.split(".")[0];
+      });
+      cubes.forEach((cube) => {
+        query.filters.push({
+          member: cube + ".supplierId",
+          operator: "equals",
+          values: [user["custom:orgId"]],
+        });
+      });
+    }
+    return query;
+  },
+
+  // TODO: enable this next section for per-tenant pre-aggs
+  // preAggregationsSchema: ({ securityContext }) =>
+  //   `cubejs_${process.env.STAGE}_${securityContext["custom:orgId"]}`,
+  // contextToAppId: ({ securityContext }) =>
+  //   `APP_${securityContext["custom:orgId"]}`,
+
+  // and disable this for per-tenant pre-aggs
+  preAggregationsSchema: `cubejs_${process.env.STAGE}`,
+
   externalDbType: "mysql",
   externalDriverFactory: () =>
     new MySQLDriver({
@@ -31,7 +61,7 @@ module.exports = new HandlerClass({
       // See https://stackoverflow.com/a/56524162/1603357
       ssl: true,
     }),
-  preAggregationsSchema: `cubejs_${process.env.STAGE}`,
+
   // Don't send telemetry
   telemetry: false,
   // Set base path to hide it's Cube.js

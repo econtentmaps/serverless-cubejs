@@ -1,25 +1,24 @@
 service: cubejs-service
 
+variablesResolutionMode: "20210219"
+configValidationMode: error
+
 plugins:
   - serverless-pseudo-parameters
   - serverless-iam-roles-per-function
   - serverless-express
 
 custom:
-  # SNS
   sns:
-    topicName: ${self:service.name}-${self:provider.stage}-process
+    topicName: ${self:service}-${self:provider.stage}-process
 
-  # S3 buckets
   s3:
     buckets:
-      athenaQueryResults: ${self:service.name}-athena-query-results-${self:provider.stage}
+      athenaQueryResults: ${self:service}-athena-query-results-${self:provider.stage}
 
-  # ElastiCache
   elasticache:
     nodeType: "cache.t2.micro"
 
-  # Aurora
   aurora:
     # Cluster configuration
     cluster:
@@ -30,7 +29,7 @@ custom:
     # Database configuration
     database:
       # Name of the database instance
-      name: cubejs
+      name: cubejs_${opt:stage, 'master'}
     # Master User configuration
     masterUser:
       # Master user name
@@ -58,10 +57,11 @@ custom:
 
 provider:
   name: aws
-  runtime: nodejs12.x
+  runtime: nodejs14.x
   stage: ${opt:stage, 'master'}
   region: ${opt:region, 'eu-west-1'}
   logRetentionInDays: 14
+  lambdaHashingVersion: "20201221"
   httpApi:
     # Breaking change with Serverless 1.75.0
     # See https://github.com/serverless/serverless/releases/tag/v1.75.0
@@ -81,65 +81,67 @@ provider:
     subnetIds:
       - "#{PrivateASubnet}"
       - "#{PrivateBSubnet}"
-  iamRoleStatements:
-    - Effect: Allow
-      Action:
-        - sns:*
-      Resource: arn:aws:sns:#{AWS::Region}:#{AWS::AccountId}:${self:custom.sns.topicName}
-    - Effect: Allow
-      Action:
-        # TODO: Improve
-        - athena:*
-      Resource: "*"
-    - Effect: Allow
-      Action:
-        - dynamodb:Query
-        - dynamodb:ConditionCheckItem
-      Resource: "arn:aws:dynamodb:eu-west-1:140398786975:table/Product-znsvd3u5cvazno25lompnhhblm-master*"
-    - Effect: Allow
-      Action:
-        - s3:ListBucket
-        - s3:GetBucketLocation
-      Resource: "arn:aws:s3:::${self:custom.s3.buckets.athenaQueryResults}"
-    - Effect: Allow
-      Action:
-        - s3:GetBucketLocation
-        - s3:GetObject
-        - s3:ListBucket
-        - s3:ListBucketMultipartUploads
-        - s3:ListMultipartUploadParts
-        - s3:AbortMultipartUpload
-        - s3:PutObject
-      Resource: "arn:aws:s3:::${self:custom.s3.buckets.athenaQueryResults}/*"
-    - Effect: Allow
-      Action:
-        - s3:GetObject
-      Resource: "arn:aws:s3:::${opt:s3-data-bucket}/*"
-    - Effect: Allow
-      Action:
-        - s3:ListBucket
-        - s3:GetBucketLocation
-      Resource: "arn:aws:s3:::${opt:s3-data-bucket}"
-    - Effect: Allow
-      Action:
-        - s3:GetObject
-      Resource: "arn:aws:s3:::${opt:s3-dimensions-bucket}/*"
-    - Effect: Allow
-      Action:
-        - s3:ListBucket
-        - s3:GetBucketLocation
-      Resource: "arn:aws:s3:::${opt:s3-dimensions-bucket}"
-    - Effect: Allow
-      Action:
-        # TODO: Improve
-        - glue:*
-      Resource: "*"
-    - Effect: Allow
-      Action:
-        - ec2:CreateNetworkInterface
-        - ec2:DescribeNetworkInterfaces
-        - ec2:DeleteNetworkInterface
-      Resource: "*"
+  iam:
+    role:
+      statements:
+        - Effect: Allow
+          Action:
+            - sns:*
+          Resource: arn:aws:sns:#{AWS::Region}:#{AWS::AccountId}:${self:custom.sns.topicName}
+        - Effect: Allow
+          Action:
+            # TODO: Improve
+            - athena:*
+          Resource: "*"
+        - Effect: Allow
+          Action:
+            - dynamodb:Query
+            - dynamodb:ConditionCheckItem
+          Resource: "arn:aws:dynamodb:eu-west-1:140398786975:table/Product-znsvd3u5cvazno25lompnhhblm-master*"
+        - Effect: Allow
+          Action:
+            - s3:ListBucket
+            - s3:GetBucketLocation
+          Resource: "arn:aws:s3:::${self:custom.s3.buckets.athenaQueryResults}"
+        - Effect: Allow
+          Action:
+            - s3:GetBucketLocation
+            - s3:GetObject
+            - s3:ListBucket
+            - s3:ListBucketMultipartUploads
+            - s3:ListMultipartUploadParts
+            - s3:AbortMultipartUpload
+            - s3:PutObject
+          Resource: "arn:aws:s3:::${self:custom.s3.buckets.athenaQueryResults}/*"
+        - Effect: Allow
+          Action:
+            - s3:GetObject
+          Resource: "arn:aws:s3:::${opt:s3-data-bucket}/*"
+        - Effect: Allow
+          Action:
+            - s3:ListBucket
+            - s3:GetBucketLocation
+          Resource: "arn:aws:s3:::${opt:s3-data-bucket}"
+        - Effect: Allow
+          Action:
+            - s3:GetObject
+          Resource: "arn:aws:s3:::${opt:s3-dimensions-bucket}/*"
+        - Effect: Allow
+          Action:
+            - s3:ListBucket
+            - s3:GetBucketLocation
+          Resource: "arn:aws:s3:::${opt:s3-dimensions-bucket}"
+        - Effect: Allow
+          Action:
+            # TODO: Improve
+            - glue:*
+          Resource: "*"
+        - Effect: Allow
+          Action:
+            - ec2:CreateNetworkInterface
+            - ec2:DescribeNetworkInterfaces
+            - ec2:DeleteNetworkInterface
+          Resource: "*"
   environment:
     AWS_NODEJS_CONNECTION_REUSE_ENABLED: "1" # Enable HTTP keep-alive connections for the AWS SDK
     AWS_ACCOUNT_ID: "#{AWS::AccountId}"
@@ -147,7 +149,7 @@ provider:
     CUBEJS_JDBC_DRIVER: athena
     CUBEJS_DB_TYPE: athena
     CUBEJS_API_SECRET: "${opt:cube-secret}"
-    CUBEJS_APP: "${self:service.name}-${self:provider.stage}"
+    CUBEJS_APP: "${self:service}-${self:provider.stage}"
     CUBEJS_LOG_LEVEL: trace
     CUBEJS_EXT_DB_HOST: "#{AuroraCluster.Endpoint.Address}"
     CUBEJS_EXT_DB_PORT: "#{AuroraCluster.Endpoint.Port}"
